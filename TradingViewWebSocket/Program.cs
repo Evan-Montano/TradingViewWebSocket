@@ -8,6 +8,10 @@ using TradingViewWebSocket;
 
 class Program
 {
+    const string DAILY = "D";
+    const string ONE_MINUTE = "1";
+    const string FIVE_MINUTE = "5";
+
     public static async Task Main(string[] args)
     {
         string CHART_SESSION_ID = string.Empty;
@@ -54,6 +58,7 @@ class Program
         {
             logFile = new StreamWriter("TradingViewWebSocket.log", append: true);
             dataHelper = new DataHelper();
+            //dataHelper.AppendLogHeader(logFile);
             while (true)
             {
                 // Read messages from the WebSocket
@@ -81,7 +86,7 @@ class Program
 
                     // When receiving: ~m~4~m~~h~1
                     // This is a heartbeat message, which we must send back as is
-                    if (message.Contains("~h~"))
+                    if (message.Contains("~h~") && !message.Contains("sds_1"))
                     {
                         try
                         {
@@ -99,7 +104,7 @@ class Program
                     }
 
                     // Check for the data update message
-                    else if (message.Contains("\"m\": \"du\""))
+                    else if (message.Contains("\"m\":\"du\"") && message.Contains("sds_1"))
                     {
                         try
                         {
@@ -521,7 +526,7 @@ class Program
         Console.Write("Creating series... ");
         JsonObject payload = new JsonObject();
         payload["m"] = "create_series";
-        payload["p"] = new JsonArray(CHART_SESSION_ID, "sds_1", "s1", "sds_sym_1", "D", 300, "");
+        payload["p"] = new JsonArray(CHART_SESSION_ID, "sds_1", "s1", "sds_sym_1", ONE_MINUTE /* 1-minute chart */, 10 /* Number of candles to request initially */, "");
         string payloadString = payload.ToJsonString();
         string frontLoad = $"~m~{payloadString.Length}~m~";
         frontLoad += payloadString;
