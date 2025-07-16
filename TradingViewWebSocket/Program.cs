@@ -4,6 +4,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using TradingViewWebSocket;
 
 class Program
 {
@@ -15,7 +16,7 @@ class Program
         string BASE_URL = "wss://data.tradingview.com/socket.io/websocket";
         ClientWebSocket webSocket;
         Uri uri;
-
+        
         try
         {
             CHART_SESSION_ID = GetSessionId("cs");
@@ -47,8 +48,12 @@ class Program
     {
         // This method is a placeholder for any data feed initialization logic.
         Console.WriteLine("\nData feed initialization started...\n");
+        StreamWriter logFile;
+        DataHelper dataHelper;
         try
         {
+            logFile = new StreamWriter("TradingViewWebSocket.log", append: true);
+            dataHelper = new DataHelper();
             while (true)
             {
                 // Read messages from the WebSocket
@@ -66,14 +71,10 @@ class Program
 
                     if (message.Contains("series_loading"))
                     {
-
-                        //// Now we call quote remove symbols, quote add symbols twice, and add quote fast symbols one more time
-                        //QuoteRemoveSymbols(webSocket, QUOTE_SESSION_ID, CHART_SYMBOL).Wait();
-                        //// Doing both in one method
-                        //QuoteAddSymbolsForPricingData(webSocket, QUOTE_SESSION_ID, CHART_SYMBOL).Wait();
-                        //QuoteFastSymbolsForPricingData(webSocket, QUOTE_SESSION_ID, CHART_SYMBOL).Wait();
-
-
+                        // We wait for the series_loading message to be received
+                        // Now we will call the following:
+                        // request_more_tickmarks
+                        // create_study (x5) each for different study types
                         RequestMoreTickmarks(webSocket, CHART_SESSION_ID).Wait();
                         CreateStudy(webSocket, CHART_SESSION_ID).Wait();
                     }
@@ -96,7 +97,20 @@ class Program
                             Console.WriteLine($"Error processing heartbeat message: {ex.Message}");
                         }
                     }
-                    Console.WriteLine();
+
+                    // Check for the data update message
+                    else if (message.Contains("\"m\": \"du\""))
+                    {
+                        try
+                        {
+                            dataHelper.ProcessDataUpdate(message, logFile);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Error processing data update message: {ex.Message}");
+                        }
+                    }
+                        Console.WriteLine();
                 }
                 else if (result.MessageType == WebSocketMessageType.Binary)
                 {
@@ -134,12 +148,6 @@ class Program
         ChartCreateSession(webSocket, CHART_SESSION_ID).Wait();
         ResolveSymbol(webSocket, CHART_SESSION_ID, CHART_SYMBOL).Wait();
         CreateSeries(webSocket, CHART_SESSION_ID).Wait();
-
-        // We will call the following:
-        // request_more_tickmarks
-        // create_study (x5) each for different study types
-        //RequestMoreTickmarks(webSocket, CHART_SESSION_ID).Wait();
-        //CreateStudy(webSocket, CHART_SESSION_ID).Wait();
 
         // Now we call quote remove symbols, quote add symbols twice, and add quote fast symbols one more time
         QuoteRemoveSymbols(webSocket, QUOTE_SESSION_ID, CHART_SYMBOL).Wait();
