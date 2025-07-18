@@ -8,6 +8,7 @@ This project connects to [TradingView](https://www.tradingview.com)'s real-time 
 * Authenticates and subscribes to a specified chart symbol
 * Parses and logs candlestick data in real-time (timestamp, OHLC, volume)
 * Designed with modularity in mind to support future automation or AI features
+* Works with any NASDAQ symbol
 
 ## Requirements
 
@@ -19,15 +20,15 @@ This project connects to [TradingView](https://www.tradingview.com)'s real-time 
 1. **Clone the repo**
 
    ```bash
-   git clone https://github.com/yourusername/TradingViewWebSocket.git
+   git clone https://github.com/Evan-Montano/TradingViewWebSocket.git
    cd TradingViewWebSocket
    ```
 
 2. **Configure symbol & channel settings**
-   Edit `AppController.cs` to set:
+   Edit `Application.cs` to set:
 
    ```csharp
-   string symbol = "BINANCE:NVDA"; // Example TradingView symbol
+   string symbol = "NVDA"; // Example TradingView NASDAQ symbol
    string resolution = "1";           // 1-minute candles
    ```
 
