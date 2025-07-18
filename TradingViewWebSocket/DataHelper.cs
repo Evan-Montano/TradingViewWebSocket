@@ -1,35 +1,35 @@
-﻿using System;
-using System.IO;
-using System.Text;
+﻿using System.Text;
 using System.Text.Json.Nodes;
 
 namespace TradingViewWebSocket
 {
+    /// <summary>
+    /// The purpose of this class is to assist in extracting the message
+    /// data that comes through the websocket as a raw string with embedded json.
+    /// </summary>
     public class DataHelper
     {
-        public class DataUpdate
-        {
-            public string Timestamp { get; set; }
-            public string Open { get; set; }
-            public string High { get; set; }
-            public string Low { get; set; }
-            public string Close { get; set; }
-            public string Volume { get; set; }
-        }
-
         public DataHelper() { }
 
-        public void ProcessDataUpdate(string data, StreamWriter streamWriter)
+
+        public void ProcessDataUpdate(string rawDataJson, StreamWriter streamWriter)
         {
-            if (string.IsNullOrWhiteSpace(data))
-                throw new ArgumentException("Data cannot be null or empty", nameof(data));
+            if (string.IsNullOrWhiteSpace(rawDataJson))
+                throw new ArgumentException("Data cannot be null or empty", nameof(rawDataJson));
             if (streamWriter == null)
                 throw new ArgumentNullException(nameof(streamWriter));
 
-            DataUpdate dto = ExtractCandlestickData(data);
-            LogCandlestickData(dto, streamWriter);
+            DataUpdate dataToLog = ExtractCandlestickData(rawDataJson);
+            LogCandlestickData(dataToLog, streamWriter);
         }
 
+        /// <summary>
+        /// Method to parse the raw string and get the information from the embedded json
+        /// </summary>
+        /// <param name="data"></param>
+        /// <returns></returns>
+        /// <exception cref="ArgumentException"></exception>
+        /// <exception cref="InvalidOperationException"></exception>
         private static DataUpdate ExtractCandlestickData(string data)
         {
             var split = data.Split("~m~", StringSplitOptions.RemoveEmptyEntries);
@@ -93,6 +93,11 @@ namespace TradingViewWebSocket
             throw new InvalidOperationException("No valid sds_1 data block found in message.");
         }
 
+        /// <summary>
+        /// Converting the Unix timestamp to a local datetime
+        /// </summary>
+        /// <param name="seconds">Unix timestamp</param>
+        /// <returns>local date time object</returns>
         private static string GetDateTimeStamp(long seconds)
         {
             // convert from Unix epoch to local DateTime
@@ -101,6 +106,11 @@ namespace TradingViewWebSocket
             return localTime.ToString("yyyy-MM-dd HH:mm:ss");
         }
 
+        /// <summary>
+        /// Formatts and write the incoming data to a .log file
+        /// </summary>
+        /// <param name="data"></param>
+        /// <param name="sw"></param>
         private static void LogCandlestickData(DataUpdate data, StreamWriter sw)
         {
             var sb = new StringBuilder();
