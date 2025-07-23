@@ -2,6 +2,15 @@
 
 class Application
 {
+
+    /*
+     * MSFT
+     * AAPL
+     * CSCO
+     * COST
+     * GOOGL
+     */
+
     /// <summary>
     /// Main entry point of the application.
     /// We define the NASDAQ symbol we will be using.
@@ -10,7 +19,7 @@ class Application
     /// <returns></returns>
     public static async Task Main(string[] args)
     {
-        const string SYMBOL = "NVDA";
+        const string SYMBOL = "MSFT";
         
         try
         {

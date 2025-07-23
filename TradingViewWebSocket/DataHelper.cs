@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json.Nodes;
 
 namespace TradingViewWebSocket
@@ -9,7 +10,11 @@ namespace TradingViewWebSocket
     /// </summary>
     public class DataHelper
     {
-        public DataHelper() { }
+        private DataUpdate dataToLog;
+        public DataHelper()
+        {
+            dataToLog = new DataUpdate();
+        }
 
 
         public void ProcessDataUpdate(string rawDataJson, StreamWriter streamWriter)
@@ -107,22 +112,34 @@ namespace TradingViewWebSocket
         }
 
         /// <summary>
-        /// Formatts and write the incoming data to a .log file
+        /// Formats and write the incoming data to a .log file
         /// </summary>
         /// <param name="data"></param>
         /// <param name="sw"></param>
-        private static void LogCandlestickData(DataUpdate data, StreamWriter sw)
+        private void LogCandlestickData(DataUpdate data, StreamWriter sw)
         {
-            var sb = new StringBuilder();
-            sb.Append(data.Timestamp).Append('\t')
-              .Append(data.Open).Append('\t')
-              .Append(data.High).Append('\t')
-              .Append(data.Low).Append('\t')
-              .Append(data.Close).Append('\t')
-              .Append(data.Volume);
+            // Check if the incoming data has passed to the next minute/timestamp
+            // We only want to log the last record that comes in
+            if (data.Timestamp == this.dataToLog.Timestamp)
+            {
+                this.dataToLog = data;
+            }
+            else
+            {
+                var sb = new StringBuilder();
+                sb.Append(this.dataToLog.Timestamp).Append('\t')
+                  .Append(this.dataToLog.Open).Append('\t')
+                  .Append(this.dataToLog.High).Append('\t')
+                  .Append(this.dataToLog.Low).Append('\t')
+                  .Append(this.dataToLog.Close).Append('\t')
+                  .Append(this.dataToLog.Volume);
 
-            sw.WriteLine(sb.ToString());
-            sw.Flush();
+                sw.WriteLine(sb.ToString());
+                sw.Flush();
+
+                this.dataToLog = data;
+            }
+                        
         }
     }
 }
