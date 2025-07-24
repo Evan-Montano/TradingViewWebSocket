@@ -71,13 +71,11 @@ namespace TradingViewWebSocket
         {
             // This method is a placeholder for any data feed initialization logic.
             Console.WriteLine("\nData feed initialization started...\n");
-            StreamWriter logFile;
             DataHelper dataHelper;
             try
             {
-                logFile = new StreamWriter("TradingViewWebSocket.log", append: true);
-                dataHelper = new DataHelper();
-                //dataHelper.AppendLogHeader(logFile);
+                dataHelper = new DataHelper(ProcessType.TRAINING_ONLY, CHART_SYMBOL);
+
                 while (true)
                 {
                     // Read messages from the WebSocket
@@ -127,11 +125,12 @@ namespace TradingViewWebSocket
                         {
                             try
                             {
-                                dataHelper.ProcessDataUpdate(message, logFile);
+                                Task.Run(() => dataHelper.ProcessDataUpdate(message, CHART_SYMBOL));
                             }
                             catch (Exception ex)
                             {
                                 Console.WriteLine($"Error processing data update message: {ex.Message}");
+                                break;
                             }
                         }
                         Console.WriteLine();

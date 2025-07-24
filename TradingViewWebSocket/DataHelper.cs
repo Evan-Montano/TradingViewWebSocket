@@ -4,6 +4,14 @@ using System.Text.Json.Nodes;
 
 namespace TradingViewWebSocket
 {
+    public enum ProcessType
+    {
+        TRAINING_ONLY,
+        PREDICTION_ONLY,
+        TRAINING_AND_PREDICTION
+    }
+
+
     /// <summary>
     /// The purpose of this class is to assist in extracting the message
     /// data that comes through the websocket as a raw string with embedded json.
@@ -11,33 +19,68 @@ namespace TradingViewWebSocket
     public class DataHelper
     {
         private DataUpdate dataToLog;
+        private ChartEngine chartEngine;
+        private ProcessType _processType;
+        private StreamWriter logFile;
+
         public DataHelper()
         {
             dataToLog = new DataUpdate();
+            chartEngine = new ChartEngine();
         }
 
-
-        public void ProcessDataUpdate(string rawDataJson, StreamWriter streamWriter)
+        public DataHelper(ProcessType type, string CHART_SYMBOL)
         {
-            if (string.IsNullOrWhiteSpace(rawDataJson))
-                throw new ArgumentException("Data cannot be null or empty", nameof(rawDataJson));
-            if (streamWriter == null)
-                throw new ArgumentNullException(nameof(streamWriter));
+            this._processType = type;
+            dataToLog = new DataUpdate();
+            chartEngine = new ChartEngine();
 
-            DataUpdate dataToLog = ExtractCandlestickData(rawDataJson);
-            LogCandlestickData(dataToLog, streamWriter);
+            // Build the relative path
+            string basePath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "ChartData", CHART_SYMBOL);
+            Directory.CreateDirectory(basePath); // Ensure directory exists
+
+            string logPath = Path.Combine(basePath, $"{CHART_SYMBOL}.log");
+            logFile = new StreamWriter(logPath, append: true);
+        }
+
+        /// <summary>
+        /// Taking in the raw du information, then deciding what to do with it.
+        /// </summary>
+        /// <param name="rawJsonData"></param>
+        /// <param name="streamWriter"></param>
+        /// <exception cref="ArgumentException"></exception>
+        /// <exception cref="ArgumentNullException"></exception>
+        public void ProcessDataUpdate(string rawJsonData, string CHART_SYMBOL)
+        {
+            if (string.IsNullOrWhiteSpace(rawJsonData))
+                throw new ArgumentException("Data cannot be null or empty", nameof(rawJsonData));
+            if (logFile == null)
+                throw new ArgumentNullException(nameof(logFile));
+
+            DataUpdate currentData = ExtractCandlestickData(rawJsonData, CHART_SYMBOL);
+
+            // Check if the incoming data has passed to the next minute/timestamp
+            // We only want to log the last record that comes in
+            if (this.dataToLog.Timestamp != currentData.Timestamp)
+            {
+                LogCandlestickData(this.dataToLog, logFile);
+                this.chartEngine.RunChartEngine(this.dataToLog, this._processType);
+            }
+
+            // Always update to the newest data, regardless of whether it's the same or a new timestamp
+            this.dataToLog = currentData;
         }
 
         /// <summary>
         /// Method to parse the raw string and get the information from the embedded json
         /// </summary>
-        /// <param name="data"></param>
+        /// <param name="rawJsonData"></param>
         /// <returns></returns>
         /// <exception cref="ArgumentException"></exception>
         /// <exception cref="InvalidOperationException"></exception>
-        private static DataUpdate ExtractCandlestickData(string data)
+        private static DataUpdate ExtractCandlestickData(string rawJsonData, string CHART_SYMBOL)
         {
-            var split = data.Split("~m~", StringSplitOptions.RemoveEmptyEntries);
+            var split = rawJsonData.Split("~m~", StringSplitOptions.RemoveEmptyEntries);
 
             foreach (var segment in split)
             {
@@ -82,7 +125,7 @@ namespace TradingViewWebSocket
                         throw new ArgumentException($"Invalid unix timestamp '{rawTs}'");
                 }
 
-                var du = new DataUpdate
+                var du = new DataUpdate(CHART_SYMBOL)
                 {
                     Timestamp = GetDateTimeStamp(seconds),
                     Open = vArr[1]!.ToString(),
@@ -114,32 +157,20 @@ namespace TradingViewWebSocket
         /// <summary>
         /// Formats and write the incoming data to a .log file
         /// </summary>
-        /// <param name="data"></param>
+        /// <param name="dataToLog"></param>
         /// <param name="sw"></param>
-        private void LogCandlestickData(DataUpdate data, StreamWriter sw)
+        private void LogCandlestickData(DataUpdate dataToLog, StreamWriter sw)
         {
-            // Check if the incoming data has passed to the next minute/timestamp
-            // We only want to log the last record that comes in
-            if (data.Timestamp == this.dataToLog.Timestamp)
-            {
-                this.dataToLog = data;
-            }
-            else
-            {
-                var sb = new StringBuilder();
-                sb.Append(this.dataToLog.Timestamp).Append('\t')
-                  .Append(this.dataToLog.Open).Append('\t')
-                  .Append(this.dataToLog.High).Append('\t')
-                  .Append(this.dataToLog.Low).Append('\t')
-                  .Append(this.dataToLog.Close).Append('\t')
-                  .Append(this.dataToLog.Volume);
+            var sb = new StringBuilder();
+            sb.Append(this.dataToLog.Timestamp).Append('\t')
+                .Append(this.dataToLog.Open).Append('\t')
+                .Append(this.dataToLog.High).Append('\t')
+                .Append(this.dataToLog.Low).Append('\t')
+                .Append(this.dataToLog.Close).Append('\t')
+                .Append(this.dataToLog.Volume);
 
-                sw.WriteLine(sb.ToString());
-                sw.Flush();
-
-                this.dataToLog = data;
-            }
-                        
+            sw.WriteLine(sb.ToString());
+            sw.Flush();
         }
     }
 }

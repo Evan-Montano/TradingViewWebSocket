@@ -13,6 +13,7 @@ namespace TradingViewWebSocket
     public class DataUpdate
     {
         #region Hard Data
+        public string Symbol { get; set; }
         public string Timestamp { get; set; }
         public string Open { get; set; }
         public string High { get; set; }
@@ -57,6 +58,11 @@ namespace TradingViewWebSocket
 
 
         public DataUpdate() { }
+
+        public DataUpdate(string symbol)
+        {
+            this.Symbol = symbol;
+        }
 
 
     }
