@@ -1,5 +1,4 @@
-﻿using System.Runtime.CompilerServices;
-using System.Text;
+﻿using System.Text;
 using System.Text.Json.Nodes;
 
 namespace TradingViewWebSocket
@@ -22,6 +21,9 @@ namespace TradingViewWebSocket
         private ChartEngine chartEngine;
         private ProcessType _processType;
         private StreamWriter logFile;
+        private string basePath;
+        private string binPath;
+        private string idxPath;
 
         public DataHelper()
         {
@@ -36,11 +38,14 @@ namespace TradingViewWebSocket
             chartEngine = new ChartEngine();
 
             // Build the relative path
-            string basePath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "ChartData", CHART_SYMBOL);
+            basePath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "ChartData", CHART_SYMBOL);
             Directory.CreateDirectory(basePath); // Ensure directory exists
 
             string logPath = Path.Combine(basePath, $"{CHART_SYMBOL}.log");
             logFile = new StreamWriter(logPath, append: true);
+
+            this.binPath = Path.Combine(basePath, $"{CHART_SYMBOL}.bin");
+            this.idxPath = Path.Combine(basePath, $"{CHART_SYMBOL}.idx");
         }
 
         /// <summary>
@@ -64,7 +69,7 @@ namespace TradingViewWebSocket
             if (this.dataToLog.Timestamp != currentData.Timestamp)
             {
                 LogCandlestickData(this.dataToLog, logFile);
-                this.chartEngine.RunChartEngine(this.dataToLog, this._processType);
+                this.chartEngine.RunChartEngine(this.dataToLog, this._processType, this.binPath, this.idxPath);
             }
 
             // Always update to the newest data, regardless of whether it's the same or a new timestamp

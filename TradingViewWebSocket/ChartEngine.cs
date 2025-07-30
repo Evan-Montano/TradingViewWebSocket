@@ -1,14 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace TradingViewWebSocket
+﻿namespace TradingViewWebSocket
 {
     public class ChartEngine
     {
         private List<DataUpdate> dataUpdateHistory;
+        private string CHART_BIN_PATH;
+        private string CHART_IDX_PATH;
+
         public ChartEngine()
         {
             dataUpdateHistory = new List<DataUpdate>();
@@ -18,17 +15,21 @@ namespace TradingViewWebSocket
         /// Takes in the DataUpdate, then processes the data based on the process type.
         /// </summary>
         /// <param name="dataToProcess"></param>
-        public void RunChartEngine(DataUpdate dataToProcess, ProcessType processType)
+        public void RunChartEngine(DataUpdate dataToProcess, ProcessType processType, string binPath, string idxPath)
         {
             try
             {
                 if (dataToProcess != null)
                 {
+                    this.CHART_BIN_PATH = binPath;
+                    this.CHART_IDX_PATH = idxPath;
+
                     UpdateCalculatedProperties(dataToProcess);
 
                     switch (processType)
                     {
                         case ProcessType.TRAINING_ONLY:
+                            ProcessDataForTraining(dataToProcess);
                             break;
                         case ProcessType.PREDICTION_ONLY:
                             break;
@@ -41,7 +42,6 @@ namespace TradingViewWebSocket
             }
             catch (Exception ex) { Console.WriteLine(ex); }
         }
-
 
         #region Calculate Properties
         /// <summary>
@@ -83,5 +83,16 @@ namespace TradingViewWebSocket
             return val.ToString();
         }
         #endregion Calculate Properties
+
+        #region TRAINING_ONLY
+        private void ProcessDataForTraining(DataUpdate dataToUpdate)
+        {
+            try
+            {
+
+            }
+            catch (Exception ex) { Console.WriteLine($"Error during training: {ex.Message}"); }
+        }
+        #endregion TRAINING_ONLY
     }
 }
