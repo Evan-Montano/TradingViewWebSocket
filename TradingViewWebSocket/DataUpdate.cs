@@ -53,9 +53,21 @@ namespace TradingViewWebSocket
         /// <summary>
         /// Time since market open
         /// </summary>
-        public string MinutesSinceMarketOpen { get; }
+        public double MinutesSinceMarketOpen
+        {
+            get
+            {
+                // TODO
+                return 0;
+            }
+        }
         #endregion Calculated Data
 
+        #region Binary Properties
+        public bool Processed { get; set; }
+        public long Index { get; set; }
+        public string Key { get; set; }
+        #endregion Binary Properties
 
         public DataUpdate() { }
 

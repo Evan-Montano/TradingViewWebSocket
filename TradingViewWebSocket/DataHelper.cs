@@ -15,7 +15,7 @@ namespace TradingViewWebSocket
     /// The purpose of this class is to assist in extracting the message
     /// data that comes through the websocket as a raw string with embedded json.
     /// </summary>
-    public class DataHelper
+    public class DataHelper : IDisposable
     {
         private DataUpdate dataToLog;
         private ChartEngine chartEngine;
@@ -46,6 +46,9 @@ namespace TradingViewWebSocket
 
             this.binPath = Path.Combine(basePath, $"{CHART_SYMBOL}.bin");
             this.idxPath = Path.Combine(basePath, $"{CHART_SYMBOL}.idx");
+
+            // Initialize the chart engine
+            chartEngine.Init(this._processType, this.binPath, this.idxPath);
         }
 
         /// <summary>
@@ -69,7 +72,7 @@ namespace TradingViewWebSocket
             if (this.dataToLog.Timestamp != currentData.Timestamp)
             {
                 LogCandlestickData(this.dataToLog, logFile);
-                this.chartEngine.RunChartEngine(this.dataToLog, this._processType, this.binPath, this.idxPath);
+                this.chartEngine.RunChartEngine(this.dataToLog);
             }
 
             // Always update to the newest data, regardless of whether it's the same or a new timestamp
@@ -176,6 +179,11 @@ namespace TradingViewWebSocket
 
             sw.WriteLine(sb.ToString());
             sw.Flush();
+        }
+
+        public void Dispose()
+        {
+            this.chartEngine.Dispose();
         }
     }
 }

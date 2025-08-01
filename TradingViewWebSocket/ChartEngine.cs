@@ -1,32 +1,46 @@
 ﻿namespace TradingViewWebSocket
 {
-    public class ChartEngine
+    public class ChartEngine : IDisposable
     {
         private List<DataUpdate> dataUpdateHistory;
+        private BinarySeeker binarySeeker;
         private string CHART_BIN_PATH;
         private string CHART_IDX_PATH;
+        private ProcessType PROCESS_TYPE;
 
         public ChartEngine()
         {
             dataUpdateHistory = new List<DataUpdate>();
+            binarySeeker = new BinarySeeker();
+        }
+
+        public void Init(ProcessType processType, string binPath, string idxPath)
+        {
+            try
+            {
+                this.CHART_BIN_PATH = binPath;
+                this.CHART_IDX_PATH = idxPath;
+                this.PROCESS_TYPE = processType;
+
+                this.binarySeeker.Init(idxPath, binPath);
+            }
+            catch (Exception ex) { Console.WriteLine(ex.Message);  }
         }
 
         /// <summary>
         /// Takes in the DataUpdate, then processes the data based on the process type.
         /// </summary>
         /// <param name="dataToProcess"></param>
-        public void RunChartEngine(DataUpdate dataToProcess, ProcessType processType, string binPath, string idxPath)
+        public void RunChartEngine(DataUpdate dataToProcess)
         {
             try
             {
                 if (dataToProcess != null)
                 {
-                    this.CHART_BIN_PATH = binPath;
-                    this.CHART_IDX_PATH = idxPath;
 
                     UpdateCalculatedProperties(dataToProcess);
 
-                    switch (processType)
+                    switch (this.PROCESS_TYPE)
                     {
                         case ProcessType.TRAINING_ONLY:
                             ProcessDataForTraining(dataToProcess);
@@ -47,7 +61,6 @@
         /// <summary>
         /// Uses the last record of the DataUpdate history to calculate other indicators.
         /// Skip if history is empty.
-        /// Add DataUpdate Object to history.
         /// </summary>
         /// <param name="dataToProcess"></param>
         private void UpdateCalculatedProperties(DataUpdate dataToProcess)
@@ -63,10 +76,6 @@
                 }
             }
             catch (Exception ex) { Console.WriteLine($"{ex.Message}"); }
-            finally
-            {
-                dataUpdateHistory.Add(dataToProcess);
-            }
         }
 
         private string GetPercentChange(string currentClose, string previousClose)
@@ -89,10 +98,142 @@
         {
             try
             {
+                // We are processing not only the incoming `dataToUpdate`, but also working with the List collection.
+                // There are a couple of scenarios:
+                // 1. The List is empty. If so, we are going to look for all roots. If we find a match, we will sit until another DataUpdate. If no match, we'll create a new root.
+                // 2. The List is not empty. We will perform a 2-layered nested for loop to process the data to maximize routes.
+                //  For each loop:
+                //          First index we search all roots for a match. If not match, a new root is created
+                //          Each subsequent index will be a child of the previous index. We check against all children, if any, and either determine a match, or new child node. If match, we increase the frequency of that node. We then focus to whichever node we settled on.
+                // Whenever a DataUpdate node is compaired to against the existing data, we will mark it in memory as processed so we don't attempt to increase frequencies multiple times.
+                // The DataUpdate collection will be given a max length of 50
 
+                if (dataToUpdate == null || this.binarySeeker == null) return;
+
+                this.binarySeeker.ClearState();
+
+                if (this.dataUpdateHistory.Count == 0)
+                {
+                    bool matchFound = false;
+                    for (this.binarySeeker.GetFirstRootNode(); this.binarySeeker.NodeFound; this.binarySeeker.GetNextRootNode())
+                    {
+                        matchFound = MatchMadeInHeaven(dataToUpdate, this.binarySeeker.CurrentNode, out float matchPercentage);
+                        if (matchFound) break;
+                    }
+                    if (!matchFound)
+                    {
+                        // Create new root node
+                        this.binarySeeker.CreateNewRoot(dataToUpdate);
+                    }
+                }
+                else
+                {
+                    
+                }
+
+                dataUpdateHistory.Add(dataToUpdate);
             }
             catch (Exception ex) { Console.WriteLine($"Error during training: {ex.Message}"); }
         }
+
+        /// <summary>
+        /// Fuzzy matching of data update nodes
+        /// </summary>
+        /// <param name="dataToUpdate"></param>
+        /// <param name="currentNode"></param>
+        /// <param name="matchPercentage"></param>
+        /// <returns></returns>
+        private bool MatchMadeInHeaven(DataUpdate dataToUpdate, DataUpdate currentNode, out float matchPercentage)
+        {
+            bool ret = false;
+            matchPercentage = 0;
+            try
+            {
+
+            }
+            catch (Exception ex) { Console.WriteLine($"Error while comparing nodes: {ex.Message}"); }
+            return ret;
+        }
         #endregion TRAINING_ONLY
+
+        public void Dispose()
+        {
+            binarySeeker?.Dispose();
+        }
+    }
+
+    class BinarySeeker : IDisposable
+    {
+        private string FILE_PATH { get; set; }
+        private FileStream _dataFileStream;
+        private FileStream _indexFileStream;
+        private BinaryWriter _dataWriter;
+        private BinaryReader _dataReader;
+        private BinaryWriter _indexWriter;
+        private BinaryReader _indexReader;
+
+        public DataUpdate CurrentNode { get; set; }
+        
+        public BinarySeeker() { }
+
+        public void Init(string indexFilePath, string dataFilePath)
+        {
+            FILE_PATH = indexFilePath;
+            this._dataFileStream = new FileStream(indexFilePath, FileMode.Open, FileAccess.ReadWrite);
+            this._indexFileStream = new FileStream(indexFilePath, FileMode.Open, FileAccess.ReadWrite);
+
+            this._dataWriter = new BinaryWriter(this._dataFileStream);
+            this._dataReader = new BinaryReader(this._dataFileStream);
+
+            this._indexWriter = new BinaryWriter(this._indexFileStream);
+            this._indexReader = new BinaryReader(this._indexFileStream);
+        }
+
+        public void Dispose()
+        {
+            _dataReader?.Dispose();
+            _dataWriter?.Dispose();
+            _indexWriter?.Dispose();
+            _indexReader?.Dispose();
+            _dataFileStream?.Dispose();
+        }
+
+        public void ClearState()
+        {
+            this._dataFileStream.Seek(0, SeekOrigin.Begin);
+            this._indexFileStream.Seek(0, SeekOrigin.Begin);
+        }
+
+        public void GetChildNodes(string parentIndex)
+        {
+
+        }
+
+        public bool NodeFound { get; set; }
+
+        public void GetFirstRootNode()
+        {
+            this.ClearState();
+
+        }
+
+        public void GetNextRootNode()
+        {
+
+        }
+
+        public void CreateNewRoot(DataUpdate dataUpdate)
+        {
+            this._dataFileStream.Seek(0, SeekOrigin.End);
+            this._indexFileStream.Seek(0, SeekOrigin.End);
+
+
+        }
+
+        private static string Create16ByteKey()
+        {
+            return string.Empty;
+        }
+
     }
 }
