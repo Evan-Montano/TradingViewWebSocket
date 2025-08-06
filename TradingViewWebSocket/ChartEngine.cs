@@ -14,15 +14,18 @@
             binarySeeker = new BinarySeeker();
         }
 
-        public void Init(ProcessType processType, string binPath, string idxPath)
+        public void Init(ProcessType processType, string binPath = null, string idxPath = null)
         {
             try
             {
-                this.CHART_BIN_PATH = binPath;
-                this.CHART_IDX_PATH = idxPath;
+                if (processType != ProcessType.DEBUG)
+                {
+                    this.CHART_BIN_PATH = binPath;
+                    this.CHART_IDX_PATH = idxPath;
+                    
+                    this.binarySeeker.Init(idxPath, binPath);
+                }
                 this.PROCESS_TYPE = processType;
-
-                this.binarySeeker.Init(idxPath, binPath);
             }
             catch (Exception ex) { Console.WriteLine(ex.Message);  }
         }
@@ -48,6 +51,9 @@
                         case ProcessType.PREDICTION_ONLY:
                             break;
                         case ProcessType.TRAINING_AND_PREDICTION:
+                            break;
+                        case ProcessType.DEBUG:
+                            DebugDataUpdate(dataToProcess);
                             break;
                         default:
                             break;
@@ -135,6 +141,34 @@
             }
             catch (Exception ex) { Console.WriteLine($"Error during training: {ex.Message}"); }
         }
+        #endregion TRAINING_ONLY
+
+        #region DEBUG
+        private void DebugDataUpdate(DataUpdate du)
+        {
+            if (du == null) return;
+            try
+            {
+                if (this.dataUpdateHistory.Count == 0)
+                {
+                    Console.WriteLine("DU History Empty. Continuing..");
+                    this.dataUpdateHistory.Add(du);
+                    return;
+                }
+
+                bool matchFound = MatchMadeInHeaven(du, dataUpdateHistory[dataUpdateHistory.Count - 1], out float matchPercentage);
+
+                Console.WriteLine($"Match found: {matchFound}");
+                Console.WriteLine($"Match percentage: {matchPercentage}");
+                Console.WriteLine("Open\tHigh\tLow\tClose\tVolume\tDelta\tPercent Change");
+                Console.WriteLine($"{du.Open}\t{du.High}\t{du.Low}\t{du.Close}\t{du.Volume}\t{du.Delta}\t{du.PercentChange}");
+                Console.WriteLine($"{dataUpdateHistory[dataUpdateHistory.Count - 1].Open}\t{dataUpdateHistory[dataUpdateHistory.Count - 1].High}\t{dataUpdateHistory[dataUpdateHistory.Count - 1].Low}\t{dataUpdateHistory[dataUpdateHistory.Count - 1].Close}\t{dataUpdateHistory[dataUpdateHistory.Count - 1].Volume}\t{ dataUpdateHistory[dataUpdateHistory.Count - 1].Delta}\t{dataUpdateHistory[dataUpdateHistory.Count - 1].PercentChange}");
+                Console.WriteLine("\n\n");
+                this.dataUpdateHistory.Add(du);
+            }
+            catch (Exception ex) { Console.WriteLine($"\nError whie debugging: {ex.Message}"); }
+        }
+        #endregion DEBUG
 
         /// <summary>
         /// Fuzzy matching of data update nodes
@@ -152,9 +186,10 @@
             // parse strings into doubles
             bool parsed = TryParseAll(incoming, node,
                 out var inOpen, out var inHigh, out var inLow, out var inClose,
-                out var inVol, out var inDelta, out var inPct, out var inTopWick, out var inBottomWick,
+                out var inVolume, out var inDelta, out var inPctChange, out var inTopWick, out var inBottomWick,
+
                 out var nOpen, out var nHigh, out var nLow, out var nClose,
-                out var nVol, out var nDelta, out var nPct, out var nTopWick, out var nBottomWick);
+                out var nVolume, out var nDelta, out var nPctChange, out var nTopWick, out var nBottomWick);
 
             if (!parsed)
                 return false;
@@ -165,9 +200,15 @@
             double priceLowDiff = NormalizePriceDifference(inLow, nLow);
             double priceCloseDiff = NormalizePriceDifference(inClose, nClose);
 
-            double volDiff = NormalizeVolumeDifference(inVol, nVol);
+            double volDiff = NormalizeVolumeDifference(inVolume, nVolume);
+            
             double deltaDiff = NormalizeRatioDifference(inDelta, nDelta);
-            double pctDiff = NormalizeRatioDifference(inPct, nPct);
+            double pctDiff = NormalizeRatioDifference(inPctChange, nPctChange);
+            if (this.dataUpdateHistory.Count < 1)
+            {
+                deltaDiff = 0.3;
+                pctDiff = 0.3;
+            }
 
             double topWickDiff = NormalizePriceDifference(inTopWick, nTopWick);
             double bottomWickDiff = NormalizePriceDifference(inBottomWick, nBottomWick);
@@ -191,31 +232,41 @@
             const double priceWeight = 0.6;
             const double psychWeight = 0.4;
 
-            double totalScore = priceWeight * priceShapeScore + psychWeight * psychologyScore;
-            matchPercentage = (float)(totalScore * 100.0);
+            const double overallThreshold = 0.89;
+            const double psycheOverrideThreshold = 0.85;
 
-            // return true if above some threshold, e.g. 75%
-            return totalScore >= 0.75;
+            double totalScore = priceWeight * priceShapeScore + psychWeight * psychologyScore;
+
+            // if the psyche signals are really strong, trust them even if prices diverge
+            if (psychologyScore >= psycheOverrideThreshold)
+            {
+                matchPercentage = (float)(psychologyScore * 100);
+                return true;
+            }
+
+            // otherwise fall back to the blended threshold
+            matchPercentage = (float)(totalScore * 100);
+            return totalScore >= overallThreshold;
+
         }
 
         // helper to parse everything in one go
         private bool TryParseAll(DataUpdate a, DataUpdate b,
             out double aOpen, out double aHigh, out double aLow, out double aClose,
-            out double aVol, out double aDelta, out double aPct, out double aTopWick, out double aBottomWick,
+            out double aVolume, out double aDelta, out double aPctChange, out double aTopWick, out double aBottomWick,
+
             out double bOpen, out double bHigh, out double bLow, out double bClose,
-            out double bVol, out double bDelta, out double bPct, out double bTopWick, out double bBottomWick)
+            out double bVolume, out double bDelta, out double bPctChange, out double bTopWick, out double bBottomWick)
         {
-            aOpen = aHigh = aLow = aClose = aVol = aDelta = aPct = aTopWick = aBottomWick = 0;
-            bOpen = bHigh = bLow = bClose = bVol = bDelta = bPct = bTopWick = bBottomWick = 0;
+            aOpen = aHigh = aLow = aClose = aVolume = aDelta = aPctChange = aTopWick = aBottomWick = 0;
+            bOpen = bHigh = bLow = bClose = bVolume = bDelta = bPctChange = bTopWick = bBottomWick = 0;
             try
             {
                 aOpen = double.Parse(a.Open);
                 aHigh = double.Parse(a.High);
                 aLow = double.Parse(a.Low);
                 aClose = double.Parse(a.Close);
-                aVol = double.Parse(a.Volume);
-                aDelta = double.Parse(a.Delta);
-                aPct = double.Parse(a.PercentChange);
+                aVolume = double.Parse(a.Volume);
                 aTopWick = double.Parse(a.TopWick);
                 aBottomWick = double.Parse(a.BottomWick);
 
@@ -223,11 +274,18 @@
                 bHigh = double.Parse(b.High);
                 bLow = double.Parse(b.Low);
                 bClose = double.Parse(b.Close);
-                bVol = double.Parse(b.Volume);
-                bDelta = double.Parse(b.Delta);
-                bPct = double.Parse(b.PercentChange);
+                bVolume = double.Parse(b.Volume);
                 bTopWick = double.Parse(b.TopWick);
                 bBottomWick = double.Parse(b.BottomWick);
+
+                if (this.dataUpdateHistory.Count > 1)
+                {
+                    aDelta = double.Parse(a.Delta);
+                    aPctChange = double.Parse(a.PercentChange);
+
+                    bDelta = double.Parse(b.Delta);
+                    bPctChange = double.Parse(b.PercentChange);
+                }
                 return true;
             }
             catch
@@ -241,8 +299,6 @@
         double NormalizeVolumeDifference(double x, double y) => Math.Abs(x - y) / Math.Max(x, y);
         double NormalizeRatioDifference(double x, double y) => Math.Abs(x - y);
         double Similarity(double normDist) => Math.Max(0, 1.0 - normDist);
-
-        #endregion TRAINING_ONLY
 
         public void Dispose()
         {

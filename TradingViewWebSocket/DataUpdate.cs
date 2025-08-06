@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace TradingViewWebSocket
+﻿namespace TradingViewWebSocket
 {
     /// <summary>
     /// This class represents the incoming candlestick data
@@ -38,27 +32,30 @@ namespace TradingViewWebSocket
         /// <summary>
         /// High - max(Open, Close)
         /// </summary>
-        public string TopWick { get; }
+        public string TopWick
+        {
+            get
+            {
+                double high = double.Parse(this.High);
+                double open = double.Parse(this.Low);
+                double close = double.Parse(this.Close);
+                double ret = high - Math.Max(open, close);
+                return ret.ToString();
+            }
+        }
 
         /// <summary>
         /// min(Open, Close) - Low
         /// </summary>
-        public string BottomWick { get; }
-
-        /// <summary>
-        /// Absolute difference between the Open and Close
-        /// </summary>
-        public string CandleBodySize { get; }
-
-        /// <summary>
-        /// Time since market open
-        /// </summary>
-        public double MinutesSinceMarketOpen
+        public string BottomWick
         {
             get
             {
-                // TODO
-                return 0;
+                double low = double.Parse(this.Low);
+                double open = double.Parse(this.Open);
+                double close = double.Parse(this.Close);
+                double ret = Math.Min(open, close) - low;
+                return ret.ToString();
             }
         }
         #endregion Calculated Data

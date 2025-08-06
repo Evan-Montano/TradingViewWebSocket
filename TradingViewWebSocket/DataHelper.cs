@@ -7,7 +7,8 @@ namespace TradingViewWebSocket
     {
         TRAINING_ONLY,
         PREDICTION_ONLY,
-        TRAINING_AND_PREDICTION
+        TRAINING_AND_PREDICTION,
+        DEBUG
     }
 
 
