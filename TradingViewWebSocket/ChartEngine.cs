@@ -143,17 +143,105 @@
         /// <param name="currentNode"></param>
         /// <param name="matchPercentage"></param>
         /// <returns></returns>
-        private bool MatchMadeInHeaven(DataUpdate dataToUpdate, DataUpdate currentNode, out float matchPercentage)
+        private bool MatchMadeInHeaven(DataUpdate incoming, DataUpdate node, out float matchPercentage)
         {
-            bool ret = false;
-            matchPercentage = 0;
+            matchPercentage = 0f;
+            if (incoming == null || node == null)
+                return false;
+
+            // parse strings into doubles
+            bool parsed = TryParseAll(incoming, node,
+                out var inOpen, out var inHigh, out var inLow, out var inClose,
+                out var inVol, out var inDelta, out var inPct, out var inTopWick, out var inBottomWick,
+                out var nOpen, out var nHigh, out var nLow, out var nClose,
+                out var nVol, out var nDelta, out var nPct, out var nTopWick, out var nBottomWick);
+
+            if (!parsed)
+                return false;
+
+            // compute normalized distances
+            double priceOpenDiff = NormalizePriceDifference(inOpen, nOpen);
+            double priceHighDiff = NormalizePriceDifference(inHigh, nHigh);
+            double priceLowDiff = NormalizePriceDifference(inLow, nLow);
+            double priceCloseDiff = NormalizePriceDifference(inClose, nClose);
+
+            double volDiff = NormalizeVolumeDifference(inVol, nVol);
+            double deltaDiff = NormalizeRatioDifference(inDelta, nDelta);
+            double pctDiff = NormalizeRatioDifference(inPct, nPct);
+
+            double topWickDiff = NormalizePriceDifference(inTopWick, nTopWick);
+            double bottomWickDiff = NormalizePriceDifference(inBottomWick, nBottomWick);
+
+            // convert distances to similarities
+            double sOpen = Similarity(priceOpenDiff);
+            double sHigh = Similarity(priceHighDiff);
+            double sLow = Similarity(priceLowDiff);
+            double sClose = Similarity(priceCloseDiff);
+            double sVol = Similarity(volDiff);
+            double sDelta = Similarity(deltaDiff);
+            double sPct = Similarity(pctDiff);
+            double sTop = Similarity(topWickDiff);
+            double sBottom = Similarity(bottomWickDiff);
+
+            // group scores
+            double priceShapeScore = (sOpen + sHigh + sLow + sClose * 2) / 5;
+            double psychologyScore = (sVol + sDelta + sPct + sTop + sBottom) / 5;
+
+            // assign group weights
+            const double priceWeight = 0.6;
+            const double psychWeight = 0.4;
+
+            double totalScore = priceWeight * priceShapeScore + psychWeight * psychologyScore;
+            matchPercentage = (float)(totalScore * 100.0);
+
+            // return true if above some threshold, e.g. 75%
+            return totalScore >= 0.75;
+        }
+
+        // helper to parse everything in one go
+        private bool TryParseAll(DataUpdate a, DataUpdate b,
+            out double aOpen, out double aHigh, out double aLow, out double aClose,
+            out double aVol, out double aDelta, out double aPct, out double aTopWick, out double aBottomWick,
+            out double bOpen, out double bHigh, out double bLow, out double bClose,
+            out double bVol, out double bDelta, out double bPct, out double bTopWick, out double bBottomWick)
+        {
+            aOpen = aHigh = aLow = aClose = aVol = aDelta = aPct = aTopWick = aBottomWick = 0;
+            bOpen = bHigh = bLow = bClose = bVol = bDelta = bPct = bTopWick = bBottomWick = 0;
             try
             {
+                aOpen = double.Parse(a.Open);
+                aHigh = double.Parse(a.High);
+                aLow = double.Parse(a.Low);
+                aClose = double.Parse(a.Close);
+                aVol = double.Parse(a.Volume);
+                aDelta = double.Parse(a.Delta);
+                aPct = double.Parse(a.PercentChange);
+                aTopWick = double.Parse(a.TopWick);
+                aBottomWick = double.Parse(a.BottomWick);
 
+                bOpen = double.Parse(b.Open);
+                bHigh = double.Parse(b.High);
+                bLow = double.Parse(b.Low);
+                bClose = double.Parse(b.Close);
+                bVol = double.Parse(b.Volume);
+                bDelta = double.Parse(b.Delta);
+                bPct = double.Parse(b.PercentChange);
+                bTopWick = double.Parse(b.TopWick);
+                bBottomWick = double.Parse(b.BottomWick);
+                return true;
             }
-            catch (Exception ex) { Console.WriteLine($"Error while comparing nodes: {ex.Message}"); }
-            return ret;
+            catch
+            {
+                return false;
+            }
         }
+
+        // normalization helpers as described above
+        double NormalizePriceDifference(double x, double y) => Math.Abs(x - y) / ((x + y) / 2.0);
+        double NormalizeVolumeDifference(double x, double y) => Math.Abs(x - y) / Math.Max(x, y);
+        double NormalizeRatioDifference(double x, double y) => Math.Abs(x - y);
+        double Similarity(double normDist) => Math.Max(0, 1.0 - normDist);
+
         #endregion TRAINING_ONLY
 
         public void Dispose()
