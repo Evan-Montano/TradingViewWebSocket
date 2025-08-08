@@ -42,6 +42,7 @@
                 double ret = high - Math.Max(open, close);
                 return ret.ToString();
             }
+            set { }
         }
 
         /// <summary>
@@ -57,6 +58,7 @@
                 double ret = Math.Min(open, close) - low;
                 return ret.ToString();
             }
+            set { }
         }
         #endregion Calculated Data
 
@@ -64,6 +66,7 @@
         public bool Processed { get; set; }
         public long Index { get; set; }
         public string Key { get; set; }
+        public int Frequency { get; set; }
         #endregion Binary Properties
 
         public DataUpdate() { }

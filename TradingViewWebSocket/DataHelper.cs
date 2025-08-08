@@ -26,12 +26,6 @@ namespace TradingViewWebSocket
         private string binPath;
         private string idxPath;
 
-        public DataHelper()
-        {
-            dataToLog = new DataUpdate();
-            chartEngine = new ChartEngine();
-        }
-
         public DataHelper(ProcessType type, string CHART_SYMBOL)
         {
             this._processType = type;

@@ -1,4 +1,7 @@
-﻿namespace TradingViewWebSocket
+﻿using System.Globalization;
+using System.Text;
+
+namespace TradingViewWebSocket
 {
     public class ChartEngine : IDisposable
     {
@@ -18,13 +21,10 @@
         {
             try
             {
-                if (processType != ProcessType.DEBUG)
-                {
-                    this.CHART_BIN_PATH = binPath;
-                    this.CHART_IDX_PATH = idxPath;
+                this.CHART_BIN_PATH = binPath;
+                this.CHART_IDX_PATH = idxPath;
                     
-                    this.binarySeeker.Init(idxPath, binPath);
-                }
+                this.binarySeeker.Init(idxPath, binPath);
                 this.PROCESS_TYPE = processType;
             }
             catch (Exception ex) { Console.WriteLine(ex.Message);  }
@@ -156,15 +156,19 @@
                     return;
                 }
 
-                bool matchFound = MatchMadeInHeaven(du, dataUpdateHistory[dataUpdateHistory.Count - 1], out float matchPercentage);
+                Console.WriteLine("Writing to binary: ");
+                Console.WriteLine($"Open: {du.Open}\tHigh: {du.High}\tLow:{du.Low}\tClose: {du.Close}\tVolume: {du.Volume}\tDelta: {du.Delta}\tPercentChange: {du.PercentChange}");
 
-                Console.WriteLine($"Match found: {matchFound}");
-                Console.WriteLine($"Match percentage: {matchPercentage}");
-                Console.WriteLine("Open\tHigh\tLow\tClose\tVolume\tDelta\tPercent Change");
-                Console.WriteLine($"{du.Open}\t{du.High}\t{du.Low}\t{du.Close}\t{du.Volume}\t{du.Delta}\t{du.PercentChange}");
-                Console.WriteLine($"{dataUpdateHistory[dataUpdateHistory.Count - 1].Open}\t{dataUpdateHistory[dataUpdateHistory.Count - 1].High}\t{dataUpdateHistory[dataUpdateHistory.Count - 1].Low}\t{dataUpdateHistory[dataUpdateHistory.Count - 1].Close}\t{dataUpdateHistory[dataUpdateHistory.Count - 1].Volume}\t{ dataUpdateHistory[dataUpdateHistory.Count - 1].Delta}\t{dataUpdateHistory[dataUpdateHistory.Count - 1].PercentChange}");
-                Console.WriteLine("\n\n");
-                this.dataUpdateHistory.Add(du);
+                // Write to Idx/Bin, then reset state
+                this.binarySeeker.CreateNewRoot(du);
+                this.binarySeeker.ClearState();
+
+                DataUpdate fromBin = new DataUpdate();
+                fromBin = this.binarySeeker.GetFirstRootNode();
+
+                Console.WriteLine($"\nRead from binary: Key: {fromBin.Key}\tFrequency: {fromBin.Frequency}\tOpen: {fromBin.Open}\tHigh: {fromBin.High}\tLow: {fromBin.Low}\tClose: {fromBin.Close}\tVolume: {fromBin.Volume}\tTopWick: {fromBin.TopWick}\tBottomWick: {fromBin.BottomWick}\tDelta: {fromBin.Delta}\tPercentChange: {fromBin.PercentChange}");
+
+
             }
             catch (Exception ex) { Console.WriteLine($"\nError whie debugging: {ex.Message}"); }
         }
@@ -308,7 +312,13 @@
 
     class BinarySeeker : IDisposable
     {
-        private string FILE_PATH { get; set; }
+        internal struct Index
+        {
+            internal string primaryKey;
+            internal long position;
+            internal string parentKey;
+        }
+
         private FileStream _dataFileStream;
         private FileStream _indexFileStream;
         private BinaryWriter _dataWriter;
@@ -322,15 +332,18 @@
 
         public void Init(string indexFilePath, string dataFilePath)
         {
-            FILE_PATH = indexFilePath;
-            this._dataFileStream = new FileStream(indexFilePath, FileMode.Open, FileAccess.ReadWrite);
-            this._indexFileStream = new FileStream(indexFilePath, FileMode.Open, FileAccess.ReadWrite);
+            try
+            {
+                this._dataFileStream = new FileStream(dataFilePath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
+                this._indexFileStream = new FileStream(indexFilePath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite);
 
-            this._dataWriter = new BinaryWriter(this._dataFileStream);
-            this._dataReader = new BinaryReader(this._dataFileStream);
+                this._dataWriter = new BinaryWriter(this._dataFileStream);
+                this._dataReader = new BinaryReader(this._dataFileStream);
 
-            this._indexWriter = new BinaryWriter(this._indexFileStream);
-            this._indexReader = new BinaryReader(this._indexFileStream);
+                this._indexWriter = new BinaryWriter(this._indexFileStream);
+                this._indexReader = new BinaryReader(this._indexFileStream);
+            }
+            catch (Exception ex) { Console.Error.WriteLine(ex.Message); }
         }
 
         public void Dispose()
@@ -355,10 +368,94 @@
 
         public bool NodeFound { get; set; }
 
-        public void GetFirstRootNode()
+        public DataUpdate GetFirstRootNode()
         {
             this.ClearState();
+            ReadIndexNode(out Index inx);
 
+            // TODO: Check the index to make sure that it's a root, then assign the dataUpdate
+            return GetDataUpdateNodeFromIndex(inx);
+        }
+
+        private void ReadIndexNode(out Index inx)
+        {
+            inx = default;
+            try
+            {
+                const int KeySize = 16;
+
+                // Read key
+                string key = ReadFixedString(_indexReader, KeySize);
+
+                // Read the 8-byute position (offset into .bin)
+                // Ensure there are enough bytes remaining in the stream for an Int64
+                long position = _indexReader.ReadInt64();
+
+                // Read the 16-byte parentKey (may all be zeros/padding for root)
+                string parentKey = ReadFixedString(_indexReader, KeySize);
+
+                // Assign the out param
+                inx = new Index
+                {
+                    primaryKey = key,
+                    position = position,
+                    parentKey = parentKey,
+                };
+            }
+            catch (Exception ex) { Console.Error.WriteLine($"{ex.Message}"); }
+        }
+
+        private DataUpdate GetDataUpdateNodeFromIndex(Index inx)
+        {
+            DataUpdate ret = null;
+            try
+            {
+                ret = new DataUpdate();
+
+                // Ensure the position is valid
+                if (inx.position < 0 || inx.position >= _dataFileStream.Length)
+                {
+                    Console.Error.WriteLine($"GetDataUpdateNodeFromIndex: invalid position {inx.position}");
+                    return null;
+                }
+
+                // Position the fileStream at the position of the new node.
+                _dataFileStream.Seek(inx.position, SeekOrigin.Begin);
+
+                // Read key (16 bytes)
+                const int KeySize = 16;
+                string key = ReadFixedString(_dataReader, KeySize);
+                ret.Key = key;
+
+                // Read frequency (4 bytes int)
+                int frequency = _dataReader.ReadInt32();
+                ret.Frequency = frequency;
+
+                // Read the doubles in the exact order they were written
+                double open = _dataReader.ReadDouble();
+                double high = _dataReader.ReadDouble();
+                double low = _dataReader.ReadDouble();
+                double close = _dataReader.ReadDouble();
+                double volume = _dataReader.ReadDouble();
+                double topWick = _dataReader.ReadDouble();
+                double bottomWick = _dataReader.ReadDouble();
+                double delta = _dataReader.ReadDouble();
+                double percentage = _dataReader.ReadDouble();
+
+                // Assign to DataUpdate. Use invariant culture when converting to string so writes/reads are stable.
+                // Adjust these assignments if your DataUpdate fields are typed differently.
+                ret.Open = open.ToString(CultureInfo.InvariantCulture);
+                ret.High = high.ToString(CultureInfo.InvariantCulture);
+                ret.Low = low.ToString(CultureInfo.InvariantCulture);
+                ret.Close = close.ToString(CultureInfo.InvariantCulture);
+                ret.Volume = volume.ToString(CultureInfo.InvariantCulture);
+                ret.TopWick = topWick.ToString(CultureInfo.InvariantCulture);
+                ret.BottomWick = bottomWick.ToString(CultureInfo.InvariantCulture);
+                ret.Delta = delta.ToString(CultureInfo.InvariantCulture);
+                ret.PercentChange = percentage.ToString(CultureInfo.InvariantCulture);
+            }
+            catch (Exception ex) { Console.Error.WriteLine(ex.ToString()); }
+            return ret;
         }
 
         public void GetNextRootNode()
@@ -371,13 +468,102 @@
             this._dataFileStream.Seek(0, SeekOrigin.End);
             this._indexFileStream.Seek(0, SeekOrigin.End);
 
+            WriteNewNode(dataUpdate);
+        }
 
+        /// <summary>
+        /// Writes either a new root or child node to idx/bin files.
+        /// </summary>
+        /// <param name="dataUpdate">The node to write</param>
+        /// <param name="parentKeyRef">Key of the parent node, if writing a child.</param>
+        /// <returns>true, if success</returns>
+        private bool WriteNewNode(DataUpdate dataUpdate, string parentKeyRef = null)
+        {
+            bool ret = false;
+            string newKey;
+            string parentKey;
+            long binPosition;
+            try
+            {
+                newKey = Create16ByteKey();
+                parentKey = parentKeyRef ?? string.Empty;
+                binPosition = _dataFileStream.Position;
+
+
+                // Write to files at the end of the file. Write empty 16Bytes to parent key if root.
+
+                // INDEX FILE
+                WriteFixedString(_indexWriter, newKey, 16); // 16 bytes string, new Key
+                _indexWriter.Write(binPosition); // 8 bytes long, bin position
+                WriteFixedString(_indexWriter, parentKey, 16); // 16 bytes string, parent key
+
+                // DATA/BINARY FILE
+                WriteFixedString(_dataWriter, newKey, 16); // 16 bytes string, key
+                _dataWriter.Write(1); // 4 bytes int, frequency (new node gets freq of 1)
+
+                _dataWriter.Write(Double.Parse(dataUpdate.Open)); // 8 bytes double, Candlestick Open
+                _dataWriter.Write(Double.Parse(dataUpdate.High)); // 8 bytes double, Candlestick High
+                _dataWriter.Write(Double.Parse(dataUpdate.Low)); // 8 bytes double, Candlestick Low
+                _dataWriter.Write(Double.Parse(dataUpdate.Close)); // 8 bytes double, Candlestick Close
+                _dataWriter.Write(Double.Parse(dataUpdate.Volume)); // 8 bytes double, Candlestick Volume
+                _dataWriter.Write(Double.Parse(dataUpdate.TopWick)); // 8 bytes double, Candlestick topWick
+                _dataWriter.Write(Double.Parse(dataUpdate.BottomWick)); // 8 bytes double, Candlestick bottomWick
+                _dataWriter.Write(Double.Parse(dataUpdate.Delta)); // 8 bytes double, Candlestick delta
+                _dataWriter.Write(Double.Parse(dataUpdate.PercentChange)); // 8 bytes double, Candlestick percent change
+
+                _dataWriter.Flush();
+                _indexWriter.Flush();
+
+                ret = true;
+            }
+            catch (Exception e) { Console.Error.WriteLine(e.ToString()); }
+            return ret;
+        }
+
+        private static void WriteFixedString(BinaryWriter writer, string value, int length)
+        {
+            // Ensure ASCII encoding to keep exactly 1 byte per char
+            byte[] bytes = Encoding.ASCII.GetBytes(value ?? string.Empty);
+
+            if (bytes.Length > length)
+                writer.Write(bytes, 0, length); // truncate
+            else
+            {
+                writer.Write(bytes);
+                // pad remaining with nulls
+                for (int i = bytes.Length; i < length; i++)
+                    writer.Write((byte)0);
+            }
+        }
+
+        private static string ReadFixedString(BinaryReader reader, int length)
+        {
+            byte[] bytes = reader.ReadBytes(length);
+            if (bytes.Length == 0) return string.Empty;
+            // If we got fewer bytes than requested, still decode what we have.
+            // Using ASCII to ensure 1 byte == 1 char. If you used a different encoding when writing,
+            // replace Encoding.ASCII with the same encoding.
+            string s = Encoding.ASCII.GetString(bytes, 0, bytes.Length);
+            // Trim trailing nulls and spaces that were used for padding
+            return s.TrimEnd('\0', ' ');
         }
 
         private static string Create16ByteKey()
         {
-            return string.Empty;
+            const int keyLength = 16;
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+            Random random = new Random();
+            char[] buffer = new char[keyLength];
+
+            for (int i = 0; i < keyLength; i++)
+            {
+                buffer[i] = chars[random.Next(chars.Length)];
+            }
+
+            return new string(buffer);
         }
+
 
     }
 }

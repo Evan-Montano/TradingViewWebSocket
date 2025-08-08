@@ -19,13 +19,14 @@ namespace TradingViewWebSocket
         
         ClientWebSocket webSocket;
         Uri uri;
+        ProcessType processType;
 
         /// <summary>
         /// Initializer for WebSocketClient.
         /// Here we are setting key values and initializing objects to use
         /// </summary>
         /// <param name="symbol_">NASDAQ symbol</param>
-        public WebSocketClient(string symbol_)
+        public WebSocketClient(string symbol_, ProcessType processType_)
         {
             this.CHART_SYMBOL = symbol_;
 
@@ -49,7 +50,7 @@ namespace TradingViewWebSocket
 
                 SendMessages(webSocket, CHART_SESSION_ID, QUOTE_SESSION_ID, CHART_SYMBOL);
 
-                BeginDataFeed(webSocket, CHART_SESSION_ID, QUOTE_SESSION_ID, CHART_SYMBOL);
+                BeginDataFeed(webSocket, CHART_SESSION_ID, QUOTE_SESSION_ID, CHART_SYMBOL, this.processType);
 
                 await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing connection", CancellationToken.None);
                 Console.WriteLine("WebSocket connection closed.");
@@ -69,58 +70,45 @@ namespace TradingViewWebSocket
         /// <param name="CHART_SESSION_ID">Session identifier for chart stream.</param>
         /// <param name="QUOTE_SESSION_ID">Session identifier for quote stream.</param>
         /// <param name="CHART_SYMBOL">Ticker symbol for which data is streamed.</param>
-        private static async Task BeginDataFeed(ClientWebSocket webSocket, string CHART_SESSION_ID, string QUOTE_SESSION_ID, string CHART_SYMBOL)
+
+        private static async Task BeginDataFeed(ClientWebSocket webSocket, string CHART_SESSION_ID, string QUOTE_SESSION_ID, string CHART_SYMBOL, ProcessType processType)
         {
+            // This method is a placeholder for any data feed initialization logic.
             Console.WriteLine("\nData feed initialization started...\n");
-
-            var messageQueue = new ConcurrentQueue<string>();
-            var cts = new CancellationTokenSource();
-            var dataHelper = new DataHelper(ProcessType.TRAINING_ONLY, CHART_SYMBOL);
-
-            Task processingTask = Task.Run(async () =>
-            {
-                while (!cts.Token.IsCancellationRequested)
-                {
-                    while (messageQueue.TryDequeue(out var message))
-                    {
-                        try
-                        {
-                            await Task.Run(() => dataHelper.ProcessDataUpdate(message, CHART_SYMBOL));
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"Error in ProcessDataUpdate: {ex.Message}");
-                        }
-                    }
-
-                    await Task.Delay(10); // Prevents tight loop if no messages
-                }
-            });
+            DataHelper dataHelper;
 
             try
             {
-                while (webSocket.State == WebSocketState.Open)
-                {
-                    var buffer = new ArraySegment<byte>(new byte[8192]);
-                    var result = await webSocket.ReceiveAsync(buffer, CancellationToken.None);
+                dataHelper = new DataHelper(processType, CHART_SYMBOL);
 
+                while (true)
+                {
+                    // Read messages from the WebSocket
+                    ArraySegment<byte> buffer = new ArraySegment<byte>(new byte[1024]);
+                    WebSocketReceiveResult result = webSocket.ReceiveAsync(buffer, CancellationToken.None).GetAwaiter().GetResult();
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         Console.WriteLine("WebSocket connection closed by server.");
                         break;
                     }
-
-                    if (result.MessageType == WebSocketMessageType.Text)
+                    else if (result.MessageType == WebSocketMessageType.Text)
                     {
                         string message = Encoding.UTF8.GetString(buffer.Array, 0, result.Count);
                         Console.WriteLine($"Received message: {message}");
 
                         if (message.Contains("series_loading"))
                         {
-                            await RequestMoreTickmarks(webSocket, CHART_SESSION_ID);
-                            await CreateStudy(webSocket, CHART_SESSION_ID);
+                            // We wait for the series_loading message to be received
+                            // Now we will call the following:
+                            // request_more_tickmarks
+                            // create_study (x5) each for different study types
+                            RequestMoreTickmarks(webSocket, CHART_SESSION_ID).Wait();
+                            CreateStudy(webSocket, CHART_SESSION_ID).Wait();
                         }
-                        else if (message.Contains("~h~") && !message.Contains("sds_1"))
+
+                        // When receiving: ~m~4~m~~h~1
+                        // This is a heartbeat message, which we must send back as is
+                        if (message.Contains("~h~") && !message.Contains("sds_1"))
                         {
                             try
                             {
@@ -129,123 +117,46 @@ namespace TradingViewWebSocket
                                     WebSocketMessageType.Text,
                                     true,
                                     CancellationToken.None);
-
-                                Console.WriteLine("Sent heartbeat: " + message);
+                                Console.WriteLine("Sent message: " + message);
                             }
                             catch (Exception ex)
                             {
-                                Console.WriteLine($"Error sending heartbeat: {ex.Message}");
+                                Console.WriteLine($"Error processing heartbeat message: {ex.Message}");
                             }
                         }
+
+                        // Check for the data update message
                         else if (message.Contains("\"m\":\"du\"") && message.Contains("sds_1"))
                         {
-                            messageQueue.Enqueue(message);
+                            try
+                            {
+                                Task.Run(() => dataHelper.ProcessDataUpdate(message, CHART_SYMBOL));
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"Error processing data update message: {ex.Message}");
+                                break;
+                            }
                         }
+                        Console.WriteLine();
                     }
                     else if (result.MessageType == WebSocketMessageType.Binary)
                     {
                         Console.WriteLine("Received binary data.");
                     }
+                    else
+                    {
+                        Console.WriteLine("Received unknown message type.");
+                    }
+
                 }
+                dataHelper.Dispose();
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"WebSocket processing error: {ex.Message}");
-            }
-            finally
-            {
-                cts.Cancel();
-                await processingTask;
-                dataHelper.Dispose();
+                Console.WriteLine($"Error during data feed initialization: {ex.Message}");
             }
         }
-
-        //private static async Task BeginDataFeed(ClientWebSocket webSocket, string CHART_SESSION_ID, string QUOTE_SESSION_ID, string CHART_SYMBOL)
-        //{
-        //    // This method is a placeholder for any data feed initialization logic.
-        //    Console.WriteLine("\nData feed initialization started...\n");
-        //    DataHelper dataHelper;
-
-        //    try
-        //    {
-        //        dataHelper = new DataHelper(ProcessType.TRAINING_ONLY, CHART_SYMBOL);
-
-        //        while (true)
-        //        {
-        //            // Read messages from the WebSocket
-        //            ArraySegment<byte> buffer = new ArraySegment<byte>(new byte[1024]);
-        //            WebSocketReceiveResult result = webSocket.ReceiveAsync(buffer, CancellationToken.None).GetAwaiter().GetResult();
-        //            if (result.MessageType == WebSocketMessageType.Close)
-        //            {
-        //                Console.WriteLine("WebSocket connection closed by server.");
-        //                break;
-        //            }
-        //            else if (result.MessageType == WebSocketMessageType.Text)
-        //            {
-        //                string message = Encoding.UTF8.GetString(buffer.Array, 0, result.Count);
-        //                Console.WriteLine($"Received message: {message}");
-
-        //                if (message.Contains("series_loading"))
-        //                {
-        //                    // We wait for the series_loading message to be received
-        //                    // Now we will call the following:
-        //                    // request_more_tickmarks
-        //                    // create_study (x5) each for different study types
-        //                    RequestMoreTickmarks(webSocket, CHART_SESSION_ID).Wait();
-        //                    CreateStudy(webSocket, CHART_SESSION_ID).Wait();
-        //                }
-
-        //                // When receiving: ~m~4~m~~h~1
-        //                // This is a heartbeat message, which we must send back as is
-        //                if (message.Contains("~h~") && !message.Contains("sds_1"))
-        //                {
-        //                    try
-        //                    {
-        //                        await webSocket.SendAsync(
-        //                            new ArraySegment<byte>(Encoding.UTF8.GetBytes(message)),
-        //                            WebSocketMessageType.Text,
-        //                            true,
-        //                            CancellationToken.None);
-        //                        Console.WriteLine("Sent message: " + message);
-        //                    }
-        //                    catch (Exception ex)
-        //                    {
-        //                        Console.WriteLine($"Error processing heartbeat message: {ex.Message}");
-        //                    }
-        //                }
-
-        //                // Check for the data update message
-        //                else if (message.Contains("\"m\":\"du\"") && message.Contains("sds_1"))
-        //                {
-        //                    try
-        //                    {
-        //                        Task.Run(() => dataHelper.ProcessDataUpdate(message, CHART_SYMBOL));
-        //                    }
-        //                    catch (Exception ex)
-        //                    {
-        //                        Console.WriteLine($"Error processing data update message: {ex.Message}");
-        //                        break;
-        //                    }
-        //                }
-        //                Console.WriteLine();
-        //            }
-        //            else if (result.MessageType == WebSocketMessageType.Binary)
-        //            {
-        //                Console.WriteLine("Received binary data.");
-        //            }
-        //            else
-        //            {
-        //                Console.WriteLine("Received unknown message type.");
-        //            }
-
-        //        }
-        //        dataHelper.Dispose();
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        Console.WriteLine($"Error during data feed initialization: {ex.Message}");
-        //    }
-        //}
 
         #region WebSocketMessages
         /// <summary>

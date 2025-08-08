@@ -14,8 +14,6 @@ close                   8 bytes double
 volume                  8 bytes double
 topWick                 8 bytes double
 bottomWick              8 bytes double
-candleBodySize          8 bytes double
-minutesSinceMarketOpen  8 bytes double
 delta                   8 bytes double
 percentage              8 bytes double
 
